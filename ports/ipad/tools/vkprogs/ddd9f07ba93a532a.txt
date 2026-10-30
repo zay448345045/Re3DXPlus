@@ -1,0 +1,14 @@
+// attribs: aPos aUV aColor
+//----VS
+attribute vec3 aPos; attribute vec2 aUV; attribute vec4 aColor;
+uniform mat4 uMVP; varying vec2 vUV; varying lowp vec4 vColor;
+void main() { gl_Position = uMVP * vec4(aPos, 1.0); vUV = aUV; vColor = aColor; }
+
+//----FS
+precision mediump float;
+uniform sampler2D uTex; uniform lowp float uCut; varying vec2 vUV; varying lowp vec4 vColor;
+void main() {
+  lowp vec4 c = texture2D(uTex, vUV) * vColor;
+  if (c.a < uCut) discard;
+  gl_FragColor = vec4(c.rgb * 0.5, 1.0);
+}

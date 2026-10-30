@@ -1,0 +1,33 @@
+// attribs: aPos aUV aColor
+//----VS
+attribute vec3 aPos; attribute vec2 aUV; attribute vec4 aColor;
+uniform mat4 uMVP; uniform vec3 uEye; uniform vec2 uFog; uniform vec2 uUVOff;
+varying vec2 vUV; varying lowp vec4 vColor; varying lowp float vFog;
+void main() {
+  gl_Position = uMVP * vec4(aPos, 1.0); vUV = aUV + uUVOff; vColor = aColor;
+  vFog = clamp((uFog.x - distance(aPos, uEye)) / (uFog.x - uFog.y), 0.0, 1.0);
+}
+
+//----FS
+precision mediump float;
+uniform sampler2D uTex; uniform lowp vec3 uFogColor; uniform lowp vec3 uGrade;
+varying vec2 vUV; varying lowp vec4 vColor; varying lowp float vFog;
+#ifdef WET
+uniform sampler2D uFrame; uniform float uWet; uniform vec3 uHorizon;
+#endif
+void main() {
+  lowp vec4 c = texture2D(uTex, vUV) * vColor;
+#ifdef WET
+  if (uWet > 0.0) {
+    vec2 uv = gl_FragCoord.xy * uHorizon.xy;
+    float below = uHorizon.z - uv.y, y = uHorizon.z + below;
+    if (below > 0.0 && y < 1.0) {
+      vec3 r = texture2D(uFrame, vec2(uv.x, y)).rgb + texture2D(uFrame, vec2(uv.x, y + below * 0.15)).rgb
+             + texture2D(uFrame, vec2(uv.x, min(y + below * 0.3, 1.0))).rgb;
+      float g = clamp(1.0 - below * 2.5, 0.0, 1.0);
+      c.rgb += min(max(r * (1.0 / 3.0) - 0.55, 0.0) * 1.5, 0.3) * (uWet * g * g);
+    }
+  }
+#endif
+  gl_FragColor = vec4(mix(uFogColor, c.rgb * uGrade, vFog), c.a);
+}

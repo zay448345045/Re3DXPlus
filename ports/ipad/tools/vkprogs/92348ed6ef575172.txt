@@ -1,0 +1,18 @@
+// attribs: aPos
+//----VS
+attribute vec2 aPos; varying vec2 vUV;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); vUV = aPos * 0.5 + 0.5; }
+
+//----FS
+precision highp float; uniform sampler2D uTex; uniform vec2 uTexel; varying vec2 vUV;
+void main() {
+  vec4 c = texture2D(uTex, vUV);
+  float z = c.g + c.b / 255.0, sum = 0.0, wsum = 0.0;
+  for (int y = -2; y < 2; ++y)
+    for (int x = -2; x < 2; ++x) {
+      vec4 s = texture2D(uTex, vUV + vec2(float(x), float(y)) * uTexel);
+      float w = max(0.0, 1.0 - abs(s.g + s.b / 255.0 - z) / (0.05 * z + 0.002));
+      sum += s.r * w; wsum += w;
+    }
+  gl_FragColor = vec4(wsum > 0.0 ? sum / wsum : c.r, 0.0, 0.0, 1.0);
+}

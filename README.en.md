@@ -7,6 +7,8 @@
 
 # Re3DX+: an unofficial port of WANGAN MIDNIGHT MAXIMUM TUNE 3DX+ (iOS / Android)
 
+> This fork keeps the Android and iPad adaptations in separate [ports/android](ports/android/) and [ports/ipad](ports/ipad/) trees. The repository root retains the upstream fork baseline; do not overwrite one platform tree with the other. Original game data, generated game-derived tables and signing materials are not distributed. Read each port's notes before building. New features have host-side tests but have not been validated on the target devices.
+
 A research project that ports the arcade game *WANGAN MIDNIGHT MAXIMUM TUNE 3DX+* natively to old mobile devices:
 
 - **iPad 3** (iOS 6.1.3, jailbroken, OpenGL ES 2.0, 1024×768 at 60 fps)

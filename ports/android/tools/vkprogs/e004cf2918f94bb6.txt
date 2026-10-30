@@ -1,0 +1,8 @@
+// attribs: aPos
+//----VS
+attribute vec3 aPos; varying vec3 vDir;
+void main() { gl_Position = vec4(aPos, 1.0); vDir = aPos + vec3(0.0, 0.0, 1.0); }
+
+//----FS
+precision mediump float; uniform samplerCube uCube; varying vec3 vDir;
+void main() { gl_FragColor = textureCube(uCube, vDir); }

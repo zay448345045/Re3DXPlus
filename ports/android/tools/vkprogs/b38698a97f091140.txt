@@ -1,0 +1,8 @@
+// attribs: aPos
+//----VS
+attribute vec3 aPos; uniform mat4 uMVP;
+void main() { gl_Position = uMVP * vec4(aPos, 1.0); }
+
+//----FS
+precision mediump float; uniform lowp vec4 uColor;
+void main() { gl_FragColor = uColor; }

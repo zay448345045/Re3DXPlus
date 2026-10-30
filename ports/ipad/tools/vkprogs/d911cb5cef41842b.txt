@@ -1,0 +1,68 @@
+// attribs: aPos aUV aAlpha
+//----VS
+#define BLUR_TAPS 1
+#define SHARPEN 1
+attribute vec2 aPos; attribute vec2 aUV; attribute float aAlpha;
+varying vec2 vT0; varying lowp float vAlpha;
+#if SHARPEN
+uniform vec2 uTexel; varying vec2 vN, vS, vW, vE;
+#endif
+#if BLUR_TAPS > 1
+varying vec2 vT1, vT2, vT3, vT4, vT5, vT6, vT7;
+#endif
+void main() {
+  gl_Position = vec4(aPos, 0.0, 1.0); vT0 = aUV; vAlpha = aAlpha;
+#if SHARPEN
+  vN = aUV - vec2(0.0, uTexel.y); vS = aUV + vec2(0.0, uTexel.y);
+  vW = aUV - vec2(uTexel.x, 0.0); vE = aUV + vec2(uTexel.x, 0.0);
+#endif
+#if BLUR_TAPS > 1
+  vec2 d = aUV - 0.5;
+  vT1 = d * (1.0 - 0.07 / 7.0) + 0.5; vT2 = d * (1.0 - 0.07 * 2.0 / 7.0) + 0.5;
+  vT3 = d * (1.0 - 0.07 * 3.0 / 7.0) + 0.5; vT4 = d * (1.0 - 0.07 * 4.0 / 7.0) + 0.5;
+  vT5 = d * (1.0 - 0.07 * 5.0 / 7.0) + 0.5; vT6 = d * (1.0 - 0.07 * 6.0 / 7.0) + 0.5;
+  vT7 = d * 0.93 + 0.5;
+#endif
+}
+
+//----FS
+#define BLUR_TAPS 1
+#define SHARPEN 1
+#define HQ 0
+precision mediump float;
+uniform sampler2D uTex;
+#if HQ
+#define LOWP
+uniform sampler2D uBloom, uAO; uniform float uBloomK;
+#else
+#define LOWP lowp
+#endif
+varying vec2 vT0; varying lowp float vAlpha;
+#if BLUR_TAPS > 1
+varying vec2 vT1, vT2, vT3, vT4, vT5, vT6, vT7;
+#endif
+#if SHARPEN
+uniform float uSharp; varying vec2 vN, vS, vW, vE;
+#endif
+void main() {
+  lowp vec4 c = texture2D(uTex, vT0);
+#if SHARPEN
+  lowp vec3 n = texture2D(uTex, vN).rgb, so = texture2D(uTex, vS).rgb;
+  lowp vec3 w = texture2D(uTex, vW).rgb, e = texture2D(uTex, vE).rgb;
+  float mn = min(min(n.g, so.g), min(w.g, e.g)), mx = max(max(n.g, so.g), max(w.g, e.g));
+  float hit = max(-mn / (4.0 * mx + 0.004), (1.0 - mx) / min(4.0 * mn - 4.0, -0.004));
+  float lobe = clamp(hit, -0.1875, 0.0) * uSharp;
+  c.rgb = clamp((lobe * (n + so + w + e) + c.rgb) * (1.0 / (4.0 * lobe + 1.0)), 0.0, 1.0);
+#endif
+#if BLUR_TAPS > 1
+  LOWP vec4 b = (c + texture2D(uTex, vT1) + texture2D(uTex, vT2) + texture2D(uTex, vT3) + texture2D(uTex, vT4)
+                 + texture2D(uTex, vT5) + texture2D(uTex, vT6) + texture2D(uTex, vT7)) * 0.125;
+  c = mix(c, b, vAlpha);
+#endif
+#if HQ
+  c.rgb *= texture2D(uAO, vT0).r;
+  c.rgb += texture2D(uBloom, vT0).rgb * uBloomK;
+  c.rgb = mix(c.rgb, 0.8 + 0.2 * (1.0 - exp((0.8 - c.rgb) * 5.0)), step(0.8, c.rgb));
+#endif
+  gl_FragColor = vec4(c.rgb, 1.0);
+}

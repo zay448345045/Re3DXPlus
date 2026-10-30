@@ -1,0 +1,13 @@
+// attribs: aPos aUV aShade
+//----VS
+attribute vec2 aPos; attribute vec2 aUV; attribute float aShade; varying vec2 vUV; varying float vShade;
+void main() { vUV = aUV; vShade = aShade; gl_Position = vec4(aPos, 0.0, 1.0); }
+
+//----FS
+precision highp float; uniform sampler2D uTex; uniform float uDy; varying vec2 vUV; varying float vShade;
+void main() {
+  vec2 d = vec2(0.0, uDy);
+  vec3 c = texture2D(uTex, vUV).rgb * 0.4 + (texture2D(uTex, vUV + d).rgb + texture2D(uTex, vUV - d).rgb) * 0.2
+         + (texture2D(uTex, vUV + 2.0 * d).rgb + texture2D(uTex, vUV - 2.0 * d).rgb) * 0.1;
+  gl_FragColor = vec4(c * vShade, 1.0);
+}

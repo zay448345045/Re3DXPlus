@@ -1,0 +1,24 @@
+// attribs: aPos aUV aColor aNormal
+//----VS
+attribute vec3 aPos; attribute vec2 aUV; attribute vec4 aColor; attribute vec3 aNormal;
+uniform mat4 uMVP; uniform vec3 uEye; uniform vec2 uFog; uniform vec2 uUVOff;
+varying vec2 vUV; varying lowp vec4 vColor; varying lowp float vFog; varying vec3 vRefl;
+void main() {
+  gl_Position = uMVP * vec4(aPos, 1.0); vUV = aUV + uUVOff; vColor = aColor;
+  vec3 i = normalize(aPos - uEye), n = normalize(aNormal);
+  vRefl = i - 2.0 * dot(n, i) * n;
+  vFog = clamp((uFog.x - distance(aPos, uEye)) / (uFog.x - uFog.y), 0.0, 1.0);
+}
+
+//----FS
+#define CUTOUT 1
+precision mediump float;
+uniform sampler2D uTex, uGloss; uniform samplerCube uCube; uniform lowp vec3 uFogColor, uGrade;
+varying vec2 vUV; varying lowp vec4 vColor; varying lowp float vFog; varying vec3 vRefl;
+void main() {
+  lowp vec4 c = texture2D(uTex, vUV) * vColor + texture2D(uGloss, vUV) * vec4(textureCube(uCube, vRefl).rgb, 1.0);
+#if CUTOUT
+  if (c.a < 0.5) discard;
+#endif
+  gl_FragColor = vec4(mix(uFogColor, c.rgb * uGrade, vFog), c.a);
+}

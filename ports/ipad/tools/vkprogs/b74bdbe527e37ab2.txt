@@ -1,0 +1,38 @@
+// attribs: aPos
+//----VS
+attribute vec2 aPos; varying vec2 vUV;
+void main() { gl_Position = vec4(aPos, 0.0, 1.0); vUV = aPos * 0.5 + 0.5; }
+
+//----FS
+precision highp float;
+uniform sampler2D uTex; uniform vec4 uView; uniform vec2 uTexel; uniform float uK;
+varying vec2 vUV;
+float lin(vec2 uv) { return uView.x * uView.y / (uView.y - texture2D(uTex, uv).r * (uView.y - uView.x)); }
+vec3 pos(vec2 uv) {
+  uv = (floor(uv / uTexel) + 0.5) * uTexel;
+  float z = lin(uv);
+  return vec3((uv * 2.0 - 1.0) * uView.zw * z, -z);
+}
+vec3 near_of(vec3 p, vec3 a, vec3 b) { return abs(a.z - p.z) < abs(b.z - p.z) ? a - p : p - b; }
+void main() {
+  vec3 p = pos(vUV);
+  float z = -p.z;
+  if (z > 2000.0) { gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); return; }
+  vec2 dx = vec2(uTexel.x * 4.0, 0.0), dy = vec2(0.0, uTexel.y * 4.0);
+  vec3 n = normalize(cross(near_of(p, pos(vUV + dx), pos(vUV - dx)), near_of(p, pos(vUV + dy), pos(vUV - dy))));
+  vec2 f = floor(mod(gl_FragCoord.xy, 4.0));
+  float a = (f.x * 4.0 + mod(f.y * 3.0 + f.x, 4.0)) * 0.3927;
+  vec2 r = 12.0 / (z * 2.0 * uView.zw);
+  r *= min(1.0, 0.12 / r.y);
+  float sum = 0.0, r2 = 12.0 * 12.0;
+  for (int i = 0; i < 8; ++i) {
+    float t = (float(i) + 0.5) * 0.125, ang = a + float(i) * 2.39996;
+    vec3 v = pos(vUV + vec2(cos(ang), sin(ang)) * r * t) - p;
+    float vv = dot(v, v) + 0.01, fall = max(1.0 - vv / r2, 0.0);
+    sum += max(dot(v, n) * inversesqrt(vv) - 0.25, 0.0) * fall * fall;
+  }
+  float ao = max(0.0, 1.0 - sum * uK * (2.0 / 8.0));
+  ao = mix(ao, 1.0, smoothstep(0.5 * 2000.0, 2000.0, z));
+  float d = z / 2000.0 * 255.0;
+  gl_FragColor = vec4(ao, floor(d) / 255.0, fract(d), 1.0);
+}

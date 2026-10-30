@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Pack story records with original font and face sheets; no menu rebuild.
+Usage: story_cutin_pack.py ARCADE_ROOT OUTPUT.bin OUTPUT.h MENU.bin
+"""
+import argparse, json, re, struct, zlib
+from pathlib import Path
+from collections import Counter
+from PIL import Image
+import menupack as m
+TEXT_BASE, FACE_BASE = 200000, 210000
+WS = r'[\x09-\x0d\x20]'
+ROW = re.compile(rf'({WS}*[^\x09-\x0d\x20]+(?:{WS}+[^\x09-\x0d\x20]+){{7}}){WS}+(.*?){WS}+(-?\d+){WS}*')
+FILE = re.compile(r'CutIn(\d+)(?:_(Even|Odd))?\.txt$')
+def cstr(s):
+    return '"' + ''.join('\\\\' if c == '\\' else '\\"' if c == '"' else ('\\%03o' % ord(c)) if ord(c) < 32 or ord(c) == 127 else c for c in s) + '"'
+def load(root):
+    directory=root/'data/cutin/jp'
+    files=sorted(((int(t.group(1)),t.group(2) or '',p) for p in directory.iterdir() if (t:=FILE.fullmatch(p.name))),key=lambda x:(x[0],x[1]))
+    records=[]
+    for episode,variant,path in files:
+        for number,line in enumerate(path.read_text(encoding='utf-8').splitlines(),1):
+            if not line.startswith('ECUTINSERIAL_'):
+                if line.strip(' \t\r\n\v\f') and not line.strip(' \t\r\n\v\f').startswith('ECUTIN_'): raise ValueError(f'unrecognized {path}:{number}: {line!r}')
+                continue
+            match=ROW.fullmatch(line)
+            if not match: raise ValueError(f'bad record {path}:{number}: {line!r}')
+            fields=re.split(WS+'+',match.group(1).strip(' \t\r\n\v\f'))
+            records.append(dict(episode=episode,variant=variant,file=path.name,line=number,fields=fields,text=match.group(2),tail=int(match.group(3))))
+    return files,records
+def menu_ids(path):
+    ids=set()
+    with path.open('rb') as f:
+        if f.read(4)!=b'WMN3': raise ValueError('not WMN3')
+        count,=struct.unpack('<I',f.read(4))
+        for _ in range(count):
+            sid,w,h,z=struct.unpack('<iHHI',f.read(12));ids.add(sid);f.seek(z or w*h*4,1)
+    return ids
+def main():
+    ap=argparse.ArgumentParser();ap.add_argument('root',type=Path);ap.add_argument('output',type=Path);ap.add_argument('header',type=Path);ap.add_argument('menu',type=Path);a=ap.parse_args()
+    files,records=load(a.root)
+    if not files or not records or TEXT_BASE+len(records)>FACE_BASE: raise ValueError('empty input or exhausted ID space')
+    elf=m.Elf(str(a.root/'main'));names=m.sprite_names(elf);images=m.cutin_images(elf)
+    original_open=Image.open;cache={}
+    def cached_open(path,*args,**kwargs):
+        key=str(path)
+        if key not in cache:
+            with original_open(path,*args,**kwargs) as im: cache[key]=im.convert('RGBA')
+        return cache[key]
+    m.Image.open=cached_open
+    faces={}; missing=Counter(); stats=Counter(); sprite_ids=[]
+    for r in records:
+        char=r['fields'][4].split('::')[-1];expr=int(r['fields'][5]);sid=images.get(char);r['face_id']=-1
+        if sid is None or expr<=0 or sid not in names:
+            missing[(char,expr,'unmapped' if sid is None else 'no-expression-or-name')]+=1;continue
+        try:
+            sheet=cached_open(a.root/names[sid]);size=tuple(round(v) for v in struct.unpack_from('<2f',elf.d,elf.off(m.TABLE_VA+44*sid+16)))
+            if min(size)>0 and size!=sheet.size: sheet=sheet.resize(size,Image.Resampling.LANCZOS)
+            c=expr-1;x,y=c%4*128,c//4*128
+            if x+128>sheet.width or y+128>sheet.height: missing[(char,expr,'out-of-bounds')]+=1;continue
+            key=(sid,expr)
+            if key not in faces: faces[key]=(len(faces),sheet.crop((x,y,x+128,y+128)))
+            r['face_id']=FACE_BASE+faces[key][0]
+        except (OSError,KeyError): missing[(char,expr,'missing-file')]+=1
+    existing=menu_ids(a.menu);overlap=existing.intersection(range(TEXT_BASE,TEXT_BASE+len(records)))|existing.intersection(range(FACE_BASE,FACE_BASE+len(faces)))
+    if overlap: raise ValueError(f'menu IDs collide: {sorted(overlap)}')
+    def sprite(f,sid,im):
+        if not (0<im.width<65536 and 0<im.height<65536): raise ValueError(f'invalid dimensions {sid} {im.size}')
+        raw=im.tobytes();z=zlib.compress(raw,9);assert zlib.decompress(z)==raw
+        alpha=im.getchannel('A').getextrema();stats['alpha_nonzero']+=alpha[1]>0;stats['alpha_transparent']+=alpha[0]<255
+        f.write(struct.pack('<iHHI',sid,im.width,im.height,len(z)));f.write(z);sprite_ids.append(sid)
+    a.output.parent.mkdir(parents=True,exist_ok=True);a.header.parent.mkdir(parents=True,exist_ok=True)
+    with a.output.open('wb') as f:
+        f.write(b'WMN3'+struct.pack('<I',len(records)+len(faces)))
+        for k,r in enumerate(records): sprite(f,TEXT_BASE+k,m.render_lines(elf,names,str(a.root),m.CUTIN_FONT,r['text'].replace('#',' ').split('\\n')))
+        for key,(k,im) in faces.items():sprite(f,FACE_BASE+k,im)
+        f.write(struct.pack('<I',0))
+    assert len(sprite_ids)==len(set(sprite_ids))==len(records)+len(faces)
+    with a.header.open('w',encoding='utf-8',newline='\n') as f:
+        f.write('/* Generated by tools/story_cutin_pack.py; source order and literals retained. */\n#ifndef STORY_CUTIN_DATA_H\n#define STORY_CUTIN_DATA_H\n\n')
+        f.write('typedef struct { int episode; const char *variant, *source_file; int source_line; const char *mode, *field1, *key, *event, *character, *expression, *face_position, *way, *text_raw; int tail, text_sprite, face_sprite; } StoryCutinRecord;\n')
+        f.write('/* face_sprite -1 means absent/unmapped. */\nstatic const StoryCutinRecord STORY_CUTIN_RECORDS[] = {\n')
+        for i,r in enumerate(records):
+            vals=[str(r['episode']),cstr(r['variant']),cstr(r['file']),str(r['line']),*[cstr(s) for s in r['fields']],cstr(r['text']),str(r['tail']),str(TEXT_BASE+i),str(r['face_id'])]
+            f.write('  { '+', '.join(vals)+' },\n')
+        f.write('};\n#define STORY_CUTIN_RECORD_COUNT (sizeof(STORY_CUTIN_RECORDS)/sizeof(STORY_CUTIN_RECORDS[0]))\n#endif\n')
+    print(json.dumps(dict(files=len(files),records=len(records),faces=len(faces),sprites=len(sprite_ids),alpha=dict(stats),unmapped_records=sum(missing.values()),missing=[{'char':x[0],'expression':x[1],'reason':x[2],'count':n} for x,n in missing.items()],output_bytes=a.output.stat().st_size,collision_check=str(a.menu)),ensure_ascii=False,indent=2))
+if __name__=='__main__':main()

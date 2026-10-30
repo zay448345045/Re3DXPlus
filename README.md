@@ -7,6 +7,8 @@
 
 # Re3DX+：湾岸 MIDNIGHT MAXIMUM TUNE 3DX+ 非官方移植（iOS / Android）
 
+> 本 fork 的平台适配代码分别位于 [ports/android](ports/android/) 和 [ports/ipad](ports/ipad/)。仓库根目录保留 fork 的上游基线；两个平台目录是各自的开发源码，不应互相覆盖。原版游戏数据、生成表和签名材料不随仓库分发，构建前请阅读各平台目录的说明。新增功能已进行主机测试，未完成本次版本的真机验证。
+
 把街机《湾岸 MIDNIGHT MAXIMUM TUNE 3DX+》原生移植到旧款移动设备上的研究项目：
 
 - **iPad 3**（iOS 6.1.3，越狱，OpenGL ES 2.0，1024×768 60fps）
